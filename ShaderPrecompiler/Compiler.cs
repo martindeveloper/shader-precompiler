@@ -21,7 +21,7 @@ namespace ShaderPrecompiler
 
         public bool CompileShaders()
         {
-            DirectoryInfo di = new DirectoryInfo(_options.InputDir);
+            DirectoryInfo di = new DirectoryInfo(_options.InputDirectory);
             return RecursiveCompile(di, ".hlsl")==0;
         }
 
