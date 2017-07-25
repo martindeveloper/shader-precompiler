@@ -22,7 +22,7 @@ namespace ShaderPrecompiler
         [ValueArgument(typeof(string), 'i', "input", DefaultValue = "", Optional = false, Description = "Input folder which contains .hlsl files")]
         public string InputDirectory;
 
-        [EnumeratedValueArgument(typeof(string), 'v', "shader-version", DefaultValue = "5_0", Optional = false, Description = "Specify shader model version", AllowedValues = "5_1;5_0;4_1;4_0")]
+        [EnumeratedValueArgument(typeof(string), 'v', "shader-version", DefaultValue = "5_0", Optional = true, Description = "Specify shader model version", AllowedValues = "5_1;5_0;4_1;4_0")]
         public string ShaderModelVersion = "";
 
         [SwitchArgument('l', "interactive", false, Optional = true, Description = "Sets if program will wait for user input")]

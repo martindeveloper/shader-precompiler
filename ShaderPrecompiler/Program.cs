@@ -32,11 +32,13 @@ namespace ShaderPrecompiler
     /// </summary>
     class Program
     {
+        private static NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+
         static int Main(string[] args)
         {
             string version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
 
-            Console.WriteLine(String.Format("ShaderCompiler {0}", version));
+            Logger.Info("ShaderCompiler {0}", version);
 
             CommandLineArguments argumentsParser = new CommandLineArguments();
 
@@ -55,7 +57,7 @@ namespace ShaderPrecompiler
             }
             catch (CommandLineArguments.ArgumentsParsingFailedException exception)
             {
-                Console.WriteLine("ERROR: Failed to parse command line arguments " + exception.Message);
+                Logger.Error("Failed to parse command line arguments {0}", exception.Message);
 
                 return 1;
             }
@@ -63,31 +65,32 @@ namespace ShaderPrecompiler
             LocateCompiler(options);
 
             if (string.IsNullOrEmpty(options.InputDirectory))
-            { 
-                Console.WriteLine("WARNING: no input directory specified, assuming current directory...");
+            {
+                Logger.Warn("No input directory specified, assuming current directory");
+
                 options.InputDirectory = Directory.GetCurrentDirectory();
             }
 
             if (!Directory.Exists(options.InputDirectory))
             {
-                Console.WriteLine("ERROR: Input directory " + options.InputDirectory +" doesn't exist");
+                Logger.Error("Input directory {0} doesn't exist", options.InputDirectory);
 
                 return 1;
             }
 
 
             Compiler compiler = new Compiler(options);
-            compiler.CompileShaders();
+            bool areShadersCompiled = compiler.CompileShaders();
 
-            if (compiler.CompileShaders())
+            if (areShadersCompiled)
             {
-                Console.WriteLine("All shaders compiled successfully.");
+                Logger.Info("All shaders compiled successfully!");
 
                 return 0;
             }
             else
             {
-                Console.WriteLine("ERROR: some shaders failed to compile.");
+                Logger.Error("Some shaders failed to compile!");
 
                 return 1;
             }
@@ -103,7 +106,7 @@ namespace ShaderPrecompiler
             {
                 if (!File.Exists(options.CompilerPath))
                 {
-                    Console.WriteLine("WARNING: Specified compiler not found at " + options.CompilerPath + " attempting to locate from default paths...");
+                    Logger.Warn("Specified compiler not found at {0} attempting to locate from default paths", options.CompilerPath);
                 }
             }
 
@@ -111,34 +114,36 @@ namespace ShaderPrecompiler
             {
                 if (File.Exists(windows10SDKPath))
                 {
-                    Console.WriteLine("Using fxc from windows 10 SDK...");
+                    Logger.Info("Using fxc from Windows 10 SDK");
                     options.CompilerPath = windows10SDKPath;
                 }
                 //then we'll try to use the compiler in the DX June 2012 SDK
                 else if (File.Exists(DXSDKPath))
                 {
-                    Console.WriteLine("Using fxc from June 2010 DX SDK...");
+                    Logger.Info("Using fxc from June 2010 DX SDK");
                     options.CompilerPath = DXSDKPath;
                 }
                 //couldn't find the compiler, so lets hope its on the path
                 else
                 {
-                    Console.WriteLine("WARNING: Couldn't find fxc, assuming its on the PATH...");
+                    Logger.Warn("Couldn't find fxc, assuming its on the PATH");
                     options.CompilerPath = "fxc.exe";
                 }
             }
 
             try
             {
-                FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(options.CompilerPath);
-                if (fvi.FileMajorPart >= 9 && fvi.FileMinorPart >= 30)
+                FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(options.CompilerPath);
+
+                if (versionInfo.FileMajorPart >= 9 && versionInfo.FileMinorPart >= 30)
                 {
                     options.CanGeneratePDBs = true;
                 }
             }
-            catch (Exception)
+            catch (Exception exception)
             {
-                Console.WriteLine("WARNING: Couldn't determine if fxc supports pdb file generation...");
+                Logger.Warn("Couldn't determine if fxc supports pdb file generation. {0}", exception.Message);
+
                 options.CanGeneratePDBs = false;
             }
         }

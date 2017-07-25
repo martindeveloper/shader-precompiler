@@ -11,6 +11,7 @@ namespace ShaderPrecompiler
 {
     class Compiler
     {
+        private static NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
         private static Regex IncludeRegex = new Regex("#include\\s*\"(.*)\"", RegexOptions.Compiled);
         private CompilerOptions _options;
 
@@ -21,8 +22,9 @@ namespace ShaderPrecompiler
 
         public bool CompileShaders()
         {
-            DirectoryInfo di = new DirectoryInfo(_options.InputDirectory);
-            return RecursiveCompile(di, ".hlsl")==0;
+            DirectoryInfo directoryInfo = new DirectoryInfo(_options.InputDirectory);
+
+            return (RecursiveCompile(directoryInfo, ".hlsl") == 0);
         }
 
 
@@ -34,49 +36,54 @@ namespace ShaderPrecompiler
             {
                 foreach (var child in info.GetFiles("*.cso"))
                 {
-                    var associatedPdb = child.FullName.Substring(0,child.FullName.Length - 4) + ".pdb";
+                    string associatedPdb = child.FullName.Substring(0,child.FullName.Length - 4) + ".pdb";
+
                     if (_options.CanGeneratePDBs && File.Exists(associatedPdb))
                     {
                         File.Delete(associatedPdb);
-                        Console.WriteLine("Cleaning - '" + associatedPdb + "'");
+                        Logger.Info("Cleaning '{0}'", associatedPdb);
                     }
-                    Console.WriteLine("Cleaning - '" + child.FullName + "'");
+
+                    Logger.Info("Cleaning '{0}'", child.FullName);
+
                     child.Delete();
                 }
             }
 
-            foreach (var child in info.GetFiles("*" + pattern))
+            foreach (FileInfo child in info.GetFiles("*" + pattern))
             {
                 //determine what type of shader we're compiling
                 string compileTarget;
-                if (child.Name.EndsWith("_vs" + pattern, StringComparison.OrdinalIgnoreCase))
+
+                if (child.Name.EndsWith(".vs" + pattern, StringComparison.OrdinalIgnoreCase))
                 {
                     compileTarget = "vs";
                 }
-                else if (child.Name.EndsWith("_ps" + pattern, StringComparison.OrdinalIgnoreCase))
+                else if (child.Name.EndsWith(".ps" + pattern, StringComparison.OrdinalIgnoreCase))
                 {
                     compileTarget = "ps";
                 }
-                else if (child.Name.EndsWith("_gs" + pattern, StringComparison.OrdinalIgnoreCase))
+                else if (child.Name.EndsWith(".gs" + pattern, StringComparison.OrdinalIgnoreCase))
                 {
                     compileTarget = "gs";
                 }
-                else if (child.Name.EndsWith("_ds" + pattern, StringComparison.OrdinalIgnoreCase))
+                else if (child.Name.EndsWith(".ds" + pattern, StringComparison.OrdinalIgnoreCase))
                 {
                     compileTarget = "ds";
                 }
-                else if (child.Name.EndsWith("_hs" + pattern, StringComparison.OrdinalIgnoreCase))
+                else if (child.Name.EndsWith(".hs" + pattern, StringComparison.OrdinalIgnoreCase))
                 {
                     compileTarget = "hs";
                 }
                 else
                 {
                     //not a known shader target, don't compile
-                    Console.WriteLine(child.FullName+ "(1,1): WARNING: Unsure of shader type - skipping");
+                    Logger.Warn("{0} (1,1): Unsure of shader type - skipping", child.FullName);
                     continue;
                 }
                  
                 string flags;
+
                 if (_options.Debug)
                 {
                     flags = "/Od ";
@@ -126,7 +133,8 @@ namespace ShaderPrecompiler
                 {
                     if (precompiled.Exists)
                     {
-                        Console.WriteLine("Deleting - '" + precompiled.FullName + "'");
+                        Logger.Info("Deleting '{0}'", precompiled.FullName);
+
                         File.Delete(precompiled.FullName);
                     }
                 }
@@ -134,37 +142,48 @@ namespace ShaderPrecompiler
                 //of date.
                 else if (!precompiled.Exists || precompiled.LastWriteTimeUtc <= GetLastModified(child.FullName) || _options.ForceBuild)
                 {
-                    if (precompiled.Exists) File.Delete(precompiled.FullName);
-                    Console.WriteLine("Compiling - '" + child.FullName + "'...");
-
-                    using (var p = Process.Start(start))
+                    if (precompiled.Exists)
                     {
-                        if (!p.WaitForExit(30000))
+                        File.Delete(precompiled.FullName);
+                    }
+
+                    Logger.Info("Compiling '{0}'", child.FullName);
+
+                    using (Process compilerProcess = Process.Start(start))
+                    {
+                        if (!compilerProcess.WaitForExit(30000))
                         {
-                            Console.WriteLine(child.FullName + "(1,1): error - compiler timed out");
+                            Logger.Error("{0} (1,1): error - compiler timed out", child.FullName);
+
                             ++failures;
                         }
                         else
                         {
                             try
                             {
-                                using (StreamReader reader = p.StandardOutput)
+                                using (StreamReader reader = compilerProcess.StandardOutput)
                                 {
-                                    Console.Write(reader.ReadToEnd());
+                                    Logger.Info(reader.ReadToEnd().TrimEnd());
                                 }
                             }
                             catch (Exception)
                             {
                             }
-                            if (p.ExitCode != 0) ++failures;
+
+                            if (compilerProcess.ExitCode != 0)
+                            {
+                                ++failures;
+                            }
                         }
                     }
                 }
             }
-            foreach (var child in info.GetDirectories())
+
+            foreach (DirectoryInfo child in info.GetDirectories())
             {
                 failures += RecursiveCompile(child, pattern);
             }
+
             return failures;
         }
 
@@ -173,23 +192,28 @@ namespace ShaderPrecompiler
          */
         private DateTime GetLastModified(string filename)
         {
-            FileInfo fi = new FileInfo(filename);
-            DateTime lastModified = fi.LastWriteTimeUtc;
+            FileInfo fileInfo = new FileInfo(filename);
+            DateTime lastWriteModified = fileInfo.LastWriteTimeUtc;
 
-            using (FileStream fs = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                using (var reader = new StreamReader(fs))
+                using (StreamReader reader = new StreamReader(fileStream))
                 {
-                    var matches = IncludeRegex.Matches(reader.ReadToEnd());
+                    MatchCollection matches = IncludeRegex.Matches(reader.ReadToEnd());
 
-                    foreach (var match in matches)
+                    foreach (Object match in matches)
                     {
-                        var lm = GetLastModified(Path.Combine(fi.DirectoryName, ((Match)match).Groups[1].Value));
-                        if (lm > lastModified) lastModified = lm;
+                        DateTime lastModified = GetLastModified(Path.Combine(fileInfo.DirectoryName, ((Match)match).Groups[1].Value));
+
+                        if (lastModified > lastWriteModified)
+                        {
+                            lastWriteModified = lastModified;
+                        }
                     }
                 }
             }
-            return lastModified;
+
+            return lastWriteModified;
         }
     }
 }
